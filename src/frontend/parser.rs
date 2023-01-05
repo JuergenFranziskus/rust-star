@@ -1,15 +1,15 @@
 use super::{
-    expr_tree::{CellOffset, Instruction, Program},
+    ast::{Ast, AstNode},
     lexer::Token,
 };
 
-pub fn parse(mut src: impl Iterator<Item = Token>) -> Program {
+pub fn parse(mut src: impl Iterator<Item = Token>) -> Ast {
     let (body, closed) = parse_instructions(&mut src);
     assert!(!closed);
 
-    Program(body)
+    Ast(body)
 }
-fn parse_instructions(src: &mut impl Iterator<Item = Token>) -> (Vec<Instruction>, bool) {
+fn parse_instructions(src: &mut impl Iterator<Item = Token>) -> (Vec<AstNode>, bool) {
     let mut i = Vec::new();
     let mut previous = None;
 
@@ -35,51 +35,52 @@ fn parse_instructions(src: &mut impl Iterator<Item = Token>) -> (Vec<Instruction
         }
     }
 }
-fn parse_instruction(src: &mut impl Iterator<Item = Token>) -> (Option<Instruction>, bool) {
+fn parse_instruction(src: &mut impl Iterator<Item = Token>) -> (Option<AstNode>, bool) {
     let Some(tok) = src.next() else { return (None, false) };
 
     let i = match tok {
-        Token::Plus => Instruction::Modify(0, 1),
-        Token::Minus => Instruction::Modify(0, -1),
-        Token::Next => Instruction::Move(1),
-        Token::Previous => Instruction::Move(-1),
-        Token::Dot => Instruction::Output(0),
-        Token::Comma => Instruction::Input(0),
+        Token::Plus => AstNode::Modify(1),
+        Token::Minus => AstNode::Modify(-1),
+        Token::Next => AstNode::Move(1),
+        Token::Previous => AstNode::Move(-1),
+        Token::Dot => AstNode::Output,
+        Token::Comma => AstNode::Input,
         Token::Close => return (None, true),
         Token::Open => {
             let (body, closed) = parse_instructions(src);
             assert!(closed);
-            collapse_loop(body, 0)
+            if loop_is_clear(&body) {
+                AstNode::Set(0)
+            } else {
+                AstNode::Loop(body)
+            }
         }
     };
 
     (Some(i), false)
 }
 
-fn collapse_loop(body: Vec<Instruction>, counter: CellOffset) -> Instruction {
+fn loop_is_clear(body: &[AstNode]) -> bool {
     if body.len() == 1 {
-        match body[0] {
-            Instruction::Modify(decr, amount) if decr == counter && amount % 2 != 0 => {
-                Instruction::Set(counter, 0)
-            }
-            _ => Instruction::Loop(counter, body),
+        match &body[0] {
+            AstNode::Modify(a) if *a % 2 != 0 => true,
+            _ => false,
         }
     } else {
-        Instruction::Loop(counter, body)
+        false
     }
 }
-
-fn merge(left: Instruction, right: Instruction) -> Merged {
-    use Instruction::*;
+fn merge(left: AstNode, right: AstNode) -> Merged {
+    use AstNode::*;
     Merged::Yes(match (left, right) {
-        (Modify(offa, a), Modify(offb, b)) if offa == offb => Modify(offa, a.wrapping_add(b)),
+        (Modify(a), Modify(b)) => Modify(a.wrapping_add(b)),
         (Move(a), Move(b)) => Move(a.wrapping_add(b)),
-        (Set(c0, v0), Modify(c1, o1)) if c0 == c1 => Set(c0, v0.wrapping_add_signed(o1)),
+        (Set(a), Modify(b)) => Set(a.wrapping_add_signed(b)),
         (left, right) => return Merged::No(left, right),
     })
 }
 
 enum Merged {
-    No(Instruction, Instruction),
-    Yes(Instruction),
+    No(AstNode, AstNode),
+    Yes(AstNode),
 }

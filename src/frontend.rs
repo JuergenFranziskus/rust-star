@@ -1,3 +1,4 @@
+pub mod ast;
 pub mod expr_tree;
 pub mod lexer;
 pub mod optimize;

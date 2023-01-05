@@ -15,8 +15,20 @@ pub enum Instruction {
         factor: i8,
     },
 
-    Loop(CellOffset, Vec<Instruction>),
-    If(CellOffset, Vec<Instruction>),
+    VerifyCell(CellOffset),
+
+    Loop(BlockBalanced, CellOffset, Vec<Instruction>),
+    If(BlockBalanced, CellOffset, Vec<Instruction>),
+}
+impl Instruction {
+    pub fn moves_pointer(&self) -> bool {
+        match self {
+            Self::Move(_) => true,
+            Self::If(bal, _, _) | Self::Loop(bal, _, _) => !bal,
+            _ => false,
+        }
+    }
 }
 
 pub type CellOffset = isize;
+pub type BlockBalanced = bool;

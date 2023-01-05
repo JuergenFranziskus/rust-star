@@ -1,4 +1,6 @@
-use super::expr_tree::{Instruction, Program};
+use std::collections::HashSet;
+
+use super::expr_tree::{CellOffset, Instruction, Program};
 
 pub fn normalize_pointer_movement(program: &mut Program) {
     normalize_pointer_rec(&mut program.0, 0)
@@ -23,11 +25,13 @@ fn normalize_pointer_rec(i: &mut Vec<Instruction>, mut offset: isize) {
                 *cell += offset;
             }
 
-            Instruction::Loop(cell, body) => {
+            Instruction::VerifyCell(cell) => *cell += offset,
+
+            Instruction::Loop(_, cell, body) => {
                 *cell += offset;
                 normalize_pointer_rec(body, offset);
             }
-            Instruction::If(base, body) => {
+            Instruction::If(_, base, body) => {
                 *base += offset;
                 normalize_pointer_rec(body, offset);
             }
@@ -53,22 +57,64 @@ fn remove_dead_rec(i: &mut Vec<Instruction>) {
         Set(_, _) => true,
         AddMultiple { .. } => true,
 
-        Loop(_, body) => {
+        VerifyCell(_) => true,
+
+        Loop(_, _, body) => {
             remove_dead_rec(body);
             true
         }
-        If(_, body) => {
+        If(_, _, body) => {
             remove_dead_rec(body);
             body.len() != 0
         }
     });
 }
 
+pub fn mark_balanced_blocks(p: &mut Program) {
+    mark_bal_blocks_rec(&mut p.0)
+}
+fn mark_bal_blocks_rec(i: &mut Vec<Instruction>) {
+    for i in i {
+        use Instruction::*;
+        match i {
+            If(bal, _, body) | Loop(bal, _, body) => {
+                mark_bal_blocks_rec(body);
+                if body.iter().all(|i| !i.moves_pointer()) {
+                    *bal = true;
+                }
+            }
+            _ => (),
+        }
+    }
+}
+
+pub fn remove_dead_verifications(program: &mut Program) {
+    let mut verified = HashSet::new();
+    remove_dead_verify_rec(&mut program.0, &mut verified);
+}
+fn remove_dead_verify_rec(i: &mut Vec<Instruction>, verified: &mut HashSet<CellOffset>) {
+    i.retain_mut(|i| {
+        if i.moves_pointer() {
+            verified.clear();
+        }
+
+        use Instruction::*;
+        match i {
+            VerifyCell(cell) => verified.insert(*cell),
+            If(_, _, body) | Loop(_, _, body) => {
+                remove_dead_verify_rec(body, verified);
+                true
+            }
+            _ => true,
+        }
+    })
+}
+
 pub fn recog_additions(p: &mut Program) {
     p.0.iter_mut().for_each(recog_additions_rec);
 }
 fn recog_additions_rec(i: &mut Instruction) {
-    if let Instruction::Loop(base, body) = i {
+    if let Instruction::Loop(_, base, body) = i {
         body.iter_mut().for_each(recog_additions_rec);
 
         let mut args = Vec::new();
@@ -97,7 +143,7 @@ fn recog_additions_rec(i: &mut Instruction) {
                 })
                 .collect();
             body.push(Instruction::Set(*base, 0));
-            *i = Instruction::If(*base, body);
+            *i = Instruction::If(true, *base, body);
         }
     }
 }

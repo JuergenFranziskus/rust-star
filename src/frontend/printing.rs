@@ -39,7 +39,9 @@ fn print_instruction<O: Write>(
             factor,
         } => writeln!(out, "{} += {} * {}", Cell(*cell), Cell(*base), factor)?,
 
-        Loop(cell, body) => {
+        VerifyCell(cell) => writeln!(out, "verify({})", Cell(*cell))?,
+
+        Loop(_, cell, body) => {
             writeln!(out, "while {} != 0", Cell(*cell))?;
             if let Some((last, body)) = body.split_last() {
                 for i in body {
@@ -48,7 +50,7 @@ fn print_instruction<O: Write>(
                 print_instruction(last, indent, true, out)?;
             }
         }
-        If(cell, body) => {
+        If(_, cell, body) => {
             writeln!(out, "if {} != 0", Cell(*cell))?;
             if let Some((last, body)) = body.split_last() {
                 for i in body {

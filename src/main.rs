@@ -1,19 +1,28 @@
 use rustfck::frontend::{
     expr_tree::{Instruction, Program},
     lexer::lex,
-    optimize::{normalize_pointer_movement, recog_additions, remove_dead},
+    optimize::{
+        mark_balanced_blocks, normalize_pointer_movement, recog_additions, remove_dead,
+        remove_dead_verifications,
+    },
     parser::parse,
     printing::pretty_print,
 };
-use std::io::{stderr, stdin, stdout, Cursor, Read, Write};
+use std::{
+    io::{stderr, stdin, stdout, Cursor, Read, Write},
+    iter::once,
+};
 
 fn main() {
     let src = std::fs::read_to_string("./programs/mandelbrot.b").unwrap();
     let tokens = lex(Cursor::new(src));
-    let mut program = parse(tokens);
+    let ast = parse(tokens);
+    let mut program = ast.gen_expr_tree();
 
     normalize_pointer_movement(&mut program);
     remove_dead(&mut program);
+    mark_balanced_blocks(&mut program);
+    remove_dead_verifications(&mut program);
     recog_additions(&mut program);
 
     pretty_print(&program, stderr()).unwrap();
@@ -21,13 +30,13 @@ fn main() {
 }
 
 fn interpret(p: &Program) {
-    let mut mem = [0; 30000];
+    let mut mem = Vec::with_capacity(30000);
     let mut ptr = 0;
     for i in &p.0 {
         exec_i(i, &mut mem, &mut ptr);
     }
 }
-fn exec_i(i: &Instruction, memory: &mut [u8; 30000], ptr: &mut usize) {
+fn exec_i(i: &Instruction, memory: &mut Vec<u8>, ptr: &mut usize) {
     use Instruction::*;
     match i {
         Modify(cell, amount) => {
@@ -67,14 +76,24 @@ fn exec_i(i: &Instruction, memory: &mut [u8; 30000], ptr: &mut usize) {
             memory[ptr.wrapping_add_signed(*target)] = new;
         }
 
-        Loop(cell, body) => {
+        VerifyCell(cell) => {
+            let i = ptr.wrapping_add_signed(*cell);
+            let req_len = i + 1;
+
+            if req_len > memory.len() {
+                let diff = req_len - memory.len();
+                memory.extend(once(0).cycle().take(diff + 1));
+            }
+        }
+
+        Loop(_, cell, body) => {
             while memory[ptr.wrapping_add_signed(*cell)] != 0 {
                 for i in body {
                     exec_i(i, memory, ptr);
                 }
             }
         }
-        If(cell, body) => {
+        If(_, cell, body) => {
             if memory[ptr.wrapping_add_signed(*cell)] != 0 {
                 for i in body {
                     exec_i(i, memory, ptr);
