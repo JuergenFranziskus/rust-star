@@ -1,6 +1,4 @@
-use std::collections::HashSet;
-
-use super::expr_tree::{CellOffset, Instruction, Program};
+use super::expr_tree::{BoundsRange, CellOffset, Instruction, Program};
 
 pub fn normalize_pointer_movement(program: &mut Program) {
     normalize_pointer_rec(&mut program.0, 0)
@@ -25,8 +23,9 @@ fn normalize_pointer_rec(i: &mut Vec<Instruction>, mut offset: isize) {
                 *cell += offset;
             }
 
-            Instruction::VerifyCell(cell) => *cell += offset,
+            Instruction::BoundsCheck(cell) => cell.start += offset,
 
+            Instruction::Seek(cell, _) => *cell += offset,
             Instruction::Loop(_, cell, body) => {
                 *cell += offset;
                 normalize_pointer_rec(body, offset);
@@ -57,8 +56,9 @@ fn remove_dead_rec(i: &mut Vec<Instruction>) {
         Set(_, _) => true,
         AddMultiple { .. } => true,
 
-        VerifyCell(_) => true,
+        BoundsCheck(_) => true,
 
+        Seek(_, _) => true,
         Loop(_, _, body) => {
             remove_dead_rec(body);
             true
@@ -88,19 +88,76 @@ fn mark_bal_blocks_rec(i: &mut Vec<Instruction>) {
     }
 }
 
+pub fn merge_verifications(p: &mut Program) {
+    merge_verif_rec(&mut p.0)
+}
+fn merge_verif_rec(instructions: &mut Vec<Instruction>) {
+    let mut insertions = Vec::new();
+    let mut insert_index = 0;
+    let mut insert_value: Option<BoundsRange> = None;
+
+    for (i, instruction) in instructions.iter_mut().enumerate() {
+        use Instruction::*;
+        match instruction {
+            &mut BoundsCheck(cell) => {
+                if let Some(val) = insert_value {
+                    insert_value = Some(val.merge(cell));
+                } else {
+                    insert_value = Some(cell);
+                }
+            }
+            Seek(_, _) => {
+                if let Some(val) = insert_value.take() {
+                    insertions.push((insert_index, val));
+                }
+                insert_index = i + 1;
+            }
+            Loop(bal, _, body) | If(bal, _, body) => {
+                if !*bal {
+                    if let Some(val) = insert_value.take() {
+                        insertions.push((insert_index, val));
+                    }
+                    insert_index = i + 1;
+                }
+                merge_verif_rec(body);
+            }
+            _ => (),
+        }
+    }
+
+    if let Some(val) = insert_value.take() {
+        insertions.push((insert_index, val));
+    }
+
+    for (i, val) in insertions.into_iter().rev() {
+        instructions.insert(i, Instruction::BoundsCheck(val));
+    }
+}
+
 pub fn remove_dead_verifications(program: &mut Program) {
-    let mut verified = HashSet::new();
+    let mut verified = None;
     remove_dead_verify_rec(&mut program.0, &mut verified);
 }
-fn remove_dead_verify_rec(i: &mut Vec<Instruction>, verified: &mut HashSet<CellOffset>) {
+fn remove_dead_verify_rec(i: &mut Vec<Instruction>, verified: &mut Option<BoundsRange>) {
     i.retain_mut(|i| {
         if i.moves_pointer() {
-            verified.clear();
+            *verified = None;
         }
 
         use Instruction::*;
         match i {
-            VerifyCell(cell) => verified.insert(*cell),
+            BoundsCheck(cell) => {
+                if let Some(highest) = verified {
+                    let larger = !highest.includes(cell);
+                    if larger {
+                        *highest = (*highest).merge(*cell);
+                    }
+                    larger
+                } else {
+                    *verified = Some(*cell);
+                    true
+                }
+            }
             If(_, _, body) | Loop(_, _, body) => {
                 remove_dead_verify_rec(body, verified);
                 true
@@ -146,4 +203,47 @@ fn recog_additions_rec(i: &mut Instruction) {
             *i = Instruction::If(true, *base, body);
         }
     }
+}
+
+pub fn remove_dead_if_statements(p: &mut Program) {
+    remove_dead_if_rec(&mut p.0)
+}
+fn remove_dead_if_rec(instructions: &mut Vec<Instruction>) {
+    let mut changes = Vec::new();
+
+    for (i, instruction) in instructions.iter_mut().enumerate() {
+        use Instruction::*;
+        match instruction {
+            Loop(_, _, body) => remove_dead_if_rec(body),
+            If(_, con, body) => {
+                let can_inline = if_is_dead(body, *con);
+                if can_inline {
+                    changes.push((i, body.clone()));
+                } else {
+                    remove_dead_if_rec(body);
+                }
+            }
+            _ => (),
+        }
+    }
+
+    for (i, body) in changes.into_iter().rev() {
+        instructions.remove(i);
+
+        for instruction in body.into_iter().rev() {
+            instructions.insert(i, instruction);
+        }
+    }
+}
+fn if_is_dead(i: &[Instruction], con: CellOffset) -> bool {
+    for i in i {
+        use Instruction::*;
+        match i {
+            &AddMultiple { base, .. } if base == con => (),
+            &Set(cell, val) if cell == con && val == 0 => (),
+            _ => return false,
+        }
+    }
+
+    true
 }

@@ -52,6 +52,11 @@ impl<T> Arena<T> {
             .next()
             .map(|(i, _)| ID::new(i))
     }
+
+    pub fn iter_indices(&self) -> impl Iterator<Item = ID<T>> + 'static {
+        let len = self.len();
+        (0..len).map(|i| ID::new(i))
+    }
 }
 impl<T> Index<ID<T>> for Arena<T> {
     type Output = T;
@@ -84,6 +89,10 @@ impl<T> ID<T> {
             index,
             _phantom: PhantomData,
         }
+    }
+
+    pub fn index(&self) -> usize {
+        self.index
     }
 }
 impl<T> Clone for ID<T> {

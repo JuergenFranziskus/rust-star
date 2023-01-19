@@ -1,4 +1,5 @@
 use super::expr_tree::{Instruction, Program};
+use crate::{frontend::expr_tree::BoundsRange, util::print_indent};
 use std::{
     fmt::Display,
     io::{self, Write},
@@ -18,7 +19,7 @@ pub fn pretty_print<O: Write>(program: &Program, mut out: O) -> io::Result<()> {
     Ok(())
 }
 
-fn print_instruction<O: Write>(
+pub fn print_instruction<O: Write>(
     node: &Instruction,
     indent: &str,
     last: bool,
@@ -39,8 +40,14 @@ fn print_instruction<O: Write>(
             factor,
         } => writeln!(out, "{} += {} * {}", Cell(*cell), Cell(*base), factor)?,
 
-        VerifyCell(cell) => writeln!(out, "verify({})", Cell(*cell))?,
+        &BoundsCheck(BoundsRange { start, length }) => writeln!(
+            out,
+            "verify({}..{})",
+            start,
+            start.wrapping_add_unsigned(length)
+        )?,
 
+        &Seek(cell, movement) => writeln!(out, "move {} until {} == 0", movement, Cell(cell))?,
         Loop(_, cell, body) => {
             writeln!(out, "while {} != 0", Cell(*cell))?;
             if let Some((last, body)) = body.split_last() {
@@ -79,22 +86,4 @@ impl Display for Cell {
 
         Ok(())
     }
-}
-
-fn print_indent<O: Write>(indent: &str, last: bool, out: &mut O) -> io::Result<String> {
-    write!(out, "{}", indent)?;
-
-    if last {
-        write!(out, "└── ")?;
-    } else {
-        write!(out, "├── ")?;
-    }
-
-    let new = if last {
-        format!("{}   ", indent)
-    } else {
-        format!("{}│   ", indent)
-    };
-
-    Ok(new)
 }

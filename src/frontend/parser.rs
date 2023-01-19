@@ -51,6 +51,8 @@ fn parse_instruction(src: &mut impl Iterator<Item = Token>) -> (Option<AstNode>,
             assert!(closed);
             if loop_is_clear(&body) {
                 AstNode::Set(0)
+            } else if let Some(movement) = loop_is_seek(&body) {
+                AstNode::Seek(movement)
             } else {
                 AstNode::Loop(body)
             }
@@ -68,6 +70,16 @@ fn loop_is_clear(body: &[AstNode]) -> bool {
         }
     } else {
         false
+    }
+}
+fn loop_is_seek(body: &[AstNode]) -> Option<isize> {
+    if body.len() == 1 {
+        match &body[0] {
+            &AstNode::Move(movement) => Some(movement),
+            _ => None,
+        }
+    } else {
+        None
     }
 }
 fn merge(left: AstNode, right: AstNode) -> Merged {
