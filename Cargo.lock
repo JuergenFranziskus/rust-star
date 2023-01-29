@@ -4,8 +4,8 @@ version = 3
 
 [[package]]
 name = "cir"
-version = "0.5.0"
-source = "git+https://github.com/JuergenFranziskus/cir.git#2de36a652b800633cc0359bce8195bd8e9020f69"
+version = "0.6.0"
+source = "git+https://github.com/JuergenFranziskus/cir.git#af51268ad67fa9c451e4bf0f3f61351030e52e16"
 dependencies = [
  "typed_garena",
 ]
@@ -19,5 +19,5 @@ dependencies = [
 
 [[package]]
 name = "typed_garena"
-version = "0.3.0"
-source = "git+https://github.com/JuergenFranziskus/typed_garena.git#067c6cda19ac5b49445ecbeba5643ac9fb7ea8c4"
+version = "0.3.1"
+source = "git+https://github.com/JuergenFranziskus/typed_garena.git#2505332b35b449b6b82e496a0b7dd32d90d7038a"

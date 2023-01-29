@@ -4,8 +4,12 @@ use super::{
 };
 
 pub fn parse(mut src: impl Iterator<Item = Token>) -> Ast {
-    let (body, closed) = parse_instructions(&mut src);
+    let (mut body, closed) = parse_instructions(&mut src);
     assert!(!closed);
+
+    if let Some(AstNode::Loop(_)) = body.get(0) {
+        body.remove(0);
+    }
 
     Ast(body)
 }

@@ -1,12 +1,9 @@
+use cir::{Module, target::TargetInfo};
 use rustfck::frontend::{
     expr_tree::{BoundsRange, CellOffset, Instruction, Program},
     lexer::lex,
-    optimize::{
-        mark_balanced_blocks, merge_verifications, normalize_pointer_movement, recog_additions,
-        remove_dead, remove_dead_if_statements, remove_dead_verifications,
-    },
     parser::parse,
-    printing::pretty_print,
+    printing::pretty_print, code_gen::{gen_code, apply_optimizations},
 };
 use std::{
     io::{stderr, stdin, stdout, Cursor, Read, Write},
@@ -21,18 +18,15 @@ fn main() {
     let ast = parse(tokens);
     let mut program = ast.gen_expr_tree();
 
-    normalize_pointer_movement(&mut program);
-    remove_dead(&mut program);
-    mark_balanced_blocks(&mut program);
-    merge_verifications(&mut program);
-    remove_dead_verifications(&mut program);
-    recog_additions(&mut program);
-    remove_dead_if_statements(&mut program);
-    merge_verifications(&mut program);
-    remove_dead_verifications(&mut program);
+    apply_optimizations(&mut program);
 
     pretty_print(&program, stderr()).unwrap();
     interpret(&program);
+
+    let mut module = Module::new(TargetInfo {});
+    gen_code(&program, &mut module);
+    
+    module.pretty_print(stdout()).unwrap();
 }
 
 #[allow(dead_code)]
@@ -53,7 +47,7 @@ fn exec_i<'a>(i: &'a Instruction, ctx: &mut Ctx) {
         Move(offset) => ctx.move_pointer(*offset),
         &Output(cell) => {
             let val = ctx.read_cell(cell);
-            stdout().write(&[val]).unwrap();
+            stderr().write(&[val]).unwrap();
         }
         &Input(cell) => {
             let mut buff = [0];
