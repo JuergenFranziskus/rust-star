@@ -1,12 +1,11 @@
-use cir::{Module, target::TargetInfo};
 use rustfck::frontend::{
     expr_tree::{BoundsRange, CellOffset, Instruction, Program},
     lexer::lex,
     parser::parse,
-    printing::pretty_print, code_gen::{gen_code, apply_optimizations},
+    printing::pretty_print, optimize::apply_optimizations,
 };
 use std::{
-    io::{stderr, stdin, stdout, Cursor, Read, Write},
+    io::{stderr, stdin, Cursor, Read, Write},
     iter::once,
 };
 
@@ -22,11 +21,6 @@ fn main() {
 
     pretty_print(&program, stderr()).unwrap();
     interpret(&program);
-
-    let mut module = Module::new(TargetInfo {});
-    gen_code(&program, &mut module);
-    
-    module.pretty_print(stdout()).unwrap();
 }
 
 #[allow(dead_code)]

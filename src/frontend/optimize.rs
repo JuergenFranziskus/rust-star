@@ -1,5 +1,18 @@
 use super::expr_tree::{BoundsRange, CellOffset, Instruction, Program};
 
+pub fn apply_optimizations(program: &mut Program) {
+    normalize_pointer_movement(program);
+    remove_dead(program);
+    mark_balanced_blocks(program);
+    merge_verifications(program);
+    remove_dead_verifications(program);
+    recog_additions(program);
+    remove_dead_if_statements(program);
+    merge_verifications(program);
+    remove_dead_verifications(program);
+}
+
+
 pub fn normalize_pointer_movement(program: &mut Program) {
     normalize_pointer_rec(&mut program.0, 0)
 }
