@@ -12,7 +12,6 @@ pub fn apply_optimizations(program: &mut Program) {
     remove_dead_verifications(program);
 }
 
-
 pub fn normalize_pointer_movement(program: &mut Program) {
     normalize_pointer_rec(&mut program.0, 0)
 }

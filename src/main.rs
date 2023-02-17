@@ -1,11 +1,16 @@
-use rustfck::frontend::{
-    expr_tree::{BoundsRange, CellOffset, Instruction, Program},
-    lexer::lex,
-    parser::parse,
-    printing::pretty_print, optimize::apply_optimizations,
+use rustfck::{
+    frontend::{
+        code_gen::gen_program,
+        expr_tree::{BoundsRange, CellOffset, Instruction, Program},
+        lexer::lex,
+        optimize::apply_optimizations,
+        parser::parse,
+        printing::pretty_print,
+    },
+    ir::printing::Printer,
 };
 use std::{
-    io::{stderr, stdin, Cursor, Read, Write},
+    io::{stderr, stdin, stdout, Cursor, Read, Write},
     iter::once,
 };
 
@@ -20,7 +25,9 @@ fn main() {
     apply_optimizations(&mut program);
 
     pretty_print(&program, stderr()).unwrap();
-    interpret(&program);
+    //interpret(&program);
+    let module = gen_program(&program);
+    Printer::new(stdout()).print_module(&module).unwrap();
 }
 
 #[allow(dead_code)]
