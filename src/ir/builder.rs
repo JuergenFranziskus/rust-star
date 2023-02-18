@@ -55,6 +55,9 @@ impl<'a> Builder<'a> {
 
         self.push_instruction(Instruction::StoreCell(index, value));
     }
+    pub fn check_bounds(&mut self, start: impl Into<Expr>, end: impl Into<Expr>) {
+        self.push_instruction(Instruction::BoundsCheck(start.into(), end.into()));
+    }
 
     pub fn set(&mut self, value: impl Into<Expr>) -> RegisterID {
         let value = value.into();

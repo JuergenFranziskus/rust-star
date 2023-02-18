@@ -8,6 +8,7 @@ use std::ops::{Index, IndexMut};
 
 pub mod block;
 pub mod builder;
+pub mod exec;
 pub mod instruction;
 pub mod printing;
 pub mod register;
@@ -54,6 +55,10 @@ impl Module {
         let id = self.add_register(param_type);
         self[block].add_parameter(id);
         id
+    }
+
+    fn entry_block(&self) -> BlockID {
+        self.entry.unwrap()
     }
 }
 impl Index<BlockID> for Module {

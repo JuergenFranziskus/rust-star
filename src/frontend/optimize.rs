@@ -37,7 +37,6 @@ fn normalize_pointer_rec(i: &mut Vec<Instruction>, mut offset: isize) {
 
             Instruction::BoundsCheck(cell) => cell.start += offset,
 
-            Instruction::Seek(cell, _) => *cell += offset,
             Instruction::Loop(_, cell, body) => {
                 *cell += offset;
                 normalize_pointer_rec(body, offset);
@@ -70,7 +69,6 @@ fn remove_dead_rec(i: &mut Vec<Instruction>) {
 
         BoundsCheck(_) => true,
 
-        Seek(_, _) => true,
         Loop(_, _, body) => {
             remove_dead_rec(body);
             true
@@ -118,12 +116,6 @@ fn merge_verif_rec(instructions: &mut Vec<Instruction>) {
                     insert_value = Some(cell);
                 }
             }
-            Seek(_, _) => {
-                if let Some(val) = insert_value.take() {
-                    insertions.push((insert_index, val));
-                }
-                insert_index = i + 1;
-            }
             Loop(bal, _, body) | If(bal, _, body) => {
                 if !*bal {
                     if let Some(val) = insert_value.take() {
@@ -157,7 +149,7 @@ fn remove_dead_verify_rec(i: &mut Vec<Instruction>, verified: &mut Option<Bounds
         }
 
         use Instruction::*;
-        match i {
+        let ret = match i {
             BoundsCheck(cell) => {
                 if let Some(highest) = verified {
                     let larger = !highest.includes(cell);
@@ -175,7 +167,12 @@ fn remove_dead_verify_rec(i: &mut Vec<Instruction>, verified: &mut Option<Bounds
                 true
             }
             _ => true,
+        };
+        if i.moves_pointer() {
+            *verified = None;
         }
+
+        ret
     })
 }
 

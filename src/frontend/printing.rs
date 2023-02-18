@@ -46,8 +46,6 @@ pub fn print_instruction<O: Write>(
             start,
             start.wrapping_add_unsigned(length)
         )?,
-
-        &Seek(cell, movement) => writeln!(out, "move {} until {} == 0", movement, Cell(cell))?,
         Loop(_, cell, body) => {
             writeln!(out, "while {} != 0", Cell(*cell))?;
             if let Some((last, body)) = body.split_last() {

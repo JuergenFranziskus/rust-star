@@ -5,9 +5,9 @@ use rustfck::{
         lexer::lex,
         optimize::apply_optimizations,
         parser::parse,
-        printing::pretty_print,
+        //printing::pretty_print,
     },
-    ir::printing::Printer,
+    ir::{exec::Exec, printing::Printer},
 };
 use std::{
     io::{stderr, stdin, stdout, Cursor, Read, Write},
@@ -15,7 +15,7 @@ use std::{
 };
 
 fn main() {
-    let program_name = "mandelbrot";
+    let program_name = "bitwidth";
 
     let src = std::fs::read_to_string(format!("./programs/{}.b", program_name)).unwrap();
     let tokens = lex(Cursor::new(src));
@@ -24,10 +24,12 @@ fn main() {
 
     apply_optimizations(&mut program);
 
-    pretty_print(&program, stderr()).unwrap();
+    //pretty_print(&program, stderr()).unwrap();
     //interpret(&program);
     let module = gen_program(&program);
     Printer::new(stdout()).print_module(&module).unwrap();
+    let mut exec = Exec::new(stdout(), stdin());
+    exec.exec_program(&module).unwrap();
 }
 
 #[allow(dead_code)]
@@ -79,13 +81,6 @@ fn exec_i<'a>(i: &'a Instruction, ctx: &mut Ctx) {
         &BoundsCheck(BoundsRange { start, length }) => {
             let offset = start.wrapping_add_unsigned(length);
             ctx.guarantee_cell(offset);
-        }
-
-        &Seek(cell, movement) => {
-            while ctx.read_cell(cell) != 0 {
-                ctx.move_pointer(movement);
-                ctx.guarantee_cell(cell);
-            }
         }
         Loop(_, cell, body) => {
             while ctx.read_cell(*cell) != 0 {

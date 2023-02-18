@@ -1,3 +1,5 @@
+use std::fmt::Display;
+
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct Program(pub Vec<Instruction>);
 
@@ -15,8 +17,6 @@ pub enum Instruction {
         factor: i8,
     },
 
-    Seek(CellOffset, isize),
-
     BoundsCheck(BoundsRange),
 
     Loop(BlockBalanced, CellOffset, Vec<Instruction>),
@@ -26,7 +26,6 @@ impl Instruction {
     pub fn moves_pointer(&self) -> bool {
         match self {
             Self::Move(_) => true,
-            Self::Seek(_, _) => true,
             Self::If(bal, _, _) | Self::Loop(bal, _, _) => !bal,
             _ => false,
         }
@@ -58,5 +57,11 @@ impl BoundsRange {
         let self_end = self.start.checked_add_unsigned(self.length).unwrap();
         let other_end = other.start.checked_add_unsigned(other.length).unwrap();
         self.start <= other.start && self_end >= other_end
+    }
+}
+impl Display for BoundsRange {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let end = self.start.wrapping_add_unsigned(self.length);
+        write!(f, "{}..{end}", self.start)
     }
 }

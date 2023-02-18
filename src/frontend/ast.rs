@@ -15,7 +15,6 @@ pub enum AstNode {
     Output,
     Input,
     Set(u8),
-    Seek(isize),
     Loop(Vec<AstNode>),
 }
 impl AstNode {
@@ -33,7 +32,6 @@ impl AstNode {
             Self::Output => Instruction::Output(0),
             Self::Input => Instruction::Input(0),
             Self::Set(val) => Instruction::Set(0, *val),
-            Self::Seek(movement) => Instruction::Seek(0, *movement),
             Self::Loop(body) => {
                 let mut new_body = Vec::new();
                 body.iter().for_each(|i| i.gen_expr_tree(&mut new_body));
@@ -53,7 +51,6 @@ impl AstNode {
             Move(_) => false,
             Output => true,
             Input => true,
-            Seek(_) => true,
             Set(_) => true,
             Loop(_) => true,
         }

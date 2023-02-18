@@ -64,26 +64,16 @@ impl<'a> CodeGen<'a> {
                 let total = self.builder.add(target_val, addend);
                 self.set_cell(target, total);
             }
-            &Seek(cell, movement) => self.gen_seek(cell, movement),
-            &BoundsCheck(_) => (),
+            &BoundsCheck(bounds) => {
+                let start = self.builder.add(self.index, bounds.start as i64);
+                let end = self.builder.add(start, bounds.length as u64);
+                self.builder.check_bounds(start, end);
+            }
             &Loop(balanced, condition, ref body) => self.gen_loop(!balanced, condition, body),
             &If(balanced, condition, ref body) => self.gen_if(!balanced, condition, body),
         }
     }
 
-    fn gen_seek(&mut self, cell: CellOffset, movement: isize) {
-        let body = self.builder.add_block();
-        let end = self.builder.add_block();
-
-        self.jump_to(body, true);
-        self.enter_branch(body, true);
-        let cell_val = self.get_cell(cell);
-        let not_zero = self.builder.test(TestOp::NotEqual, cell_val, 0i8);
-        let next_index = self.builder.add(self.index, movement as i64);
-        self.builder.branch(not_zero, (body, next_index), end);
-
-        self.enter_branch(end, false);
-    }
     fn gen_loop(&mut self, unbalanced: bool, condition: CellOffset, instructions: &[Instruction]) {
         let header = self.builder.add_block();
         let body = self.builder.add_block();

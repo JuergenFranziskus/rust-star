@@ -42,6 +42,7 @@ impl<O: Write> Printer<O> {
             &Nop => writeln!(self.out, "nop")?,
             &LoadCell(target, index) => writeln!(self.out, "{target} = load({index})")?,
             &StoreCell(index, value) => writeln!(self.out, "store({index}, {value})")?,
+            &BoundsCheck(index, bounds) => writeln!(self.out, "boundscheck({index}, {bounds})")?,
             &Set(target, value) => writeln!(self.out, "{target} = {value}")?,
             &Binary(op, target, a, b) => {
                 let target_type = m[target].register_type();

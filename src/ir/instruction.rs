@@ -1,6 +1,5 @@
-use std::fmt::Display;
-
 use super::{block::BlockID, register::RegisterID, types::Type, Module};
+use std::fmt::Display;
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub enum Instruction {
@@ -8,6 +7,7 @@ pub enum Instruction {
 
     LoadCell(RegisterID, Expr),
     StoreCell(Expr, Expr),
+    BoundsCheck(Expr, Expr),
 
     Set(RegisterID, Expr),
     Binary(BinaryOp, RegisterID, Expr, Expr),
