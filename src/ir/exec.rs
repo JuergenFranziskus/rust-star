@@ -50,7 +50,7 @@ impl<O: Write, I: Read> Exec<O, I> {
         }
         let _id = block.id();
         for (_i, instruction) in block.body().into_iter().enumerate() {
-            //eprintln!("Executing instruction {i} of block {id}");
+            //eprintln!("Executing instruction {_i} of block {_id}");
 
             use Instruction::*;
             match instruction {
@@ -73,7 +73,7 @@ impl<O: Write, I: Read> Exec<O, I> {
     }
 
     fn load_cell(&mut self, target: RegisterID, index: &Expr) {
-        let Value::I64(index) = self.eval_expr(index) else { panic!() };
+        let Value::I64(index) = self.eval_expr(index) else { panic!("{index} is not of type i64") };
         let cell = self.cells[index as usize];
         self[target] = Value::I8(cell);
     }
@@ -293,6 +293,7 @@ impl<O: Write, I: Read> Exec<O, I> {
     fn output(&mut self, value: &Expr) -> io::Result<()> {
         let Value::I8(value) = self.eval_expr(value) else { panic!() };
         self.stdout.write(&[value])?;
+        self.stdout.flush()?;
         Ok(())
     }
     fn input(&mut self, target: RegisterID, default: &Expr) -> io::Result<()> {

@@ -116,8 +116,8 @@ fn merge_verif_rec(instructions: &mut Vec<Instruction>) {
                     insert_value = Some(cell);
                 }
             }
-            Loop(bal, _, body) | If(bal, _, body) => {
-                if !*bal {
+            &mut Loop(bal, _, ref mut body) | &mut If(bal, _, ref mut body) => {
+                if !bal {
                     if let Some(val) = insert_value.take() {
                         insertions.push((insert_index, val));
                     }

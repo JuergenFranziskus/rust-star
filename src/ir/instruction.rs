@@ -166,6 +166,11 @@ impl From<u64> for Expr {
         Self::Int(ConstInt::from(value))
     }
 }
+impl From<ConstInt> for Expr {
+    fn from(value: ConstInt) -> Self {
+        Self::Int(value)
+    }
+}
 impl Display for Expr {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
@@ -174,6 +179,7 @@ impl Display for Expr {
         }
     }
 }
+
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
 pub enum ConstInt {
