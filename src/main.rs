@@ -5,7 +5,7 @@ use rustfck::{
 use std::io::{stdin, stdout, Cursor};
 
 fn main() {
-    let program_name = "bitwidth";
+    let program_name = "mandelbrot";
 
     let src = std::fs::read_to_string(format!("./programs/{}.b", program_name)).unwrap();
     let tokens = lex(Cursor::new(src));

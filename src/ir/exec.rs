@@ -6,14 +6,13 @@ use super::{
 };
 use crate::ir::instruction::Instruction;
 use std::{
-    collections::HashMap,
     io::{self, Read, Write},
-    iter::once,
+    iter::once, ops::{Index, IndexMut},
 };
 
 pub struct Exec<O, I> {
     cells: Vec<u8>,
-    registers: HashMap<RegisterID, Value>,
+    registers: Vec<Value>,
     stdout: O,
     stdin: I,
 }
@@ -21,13 +20,17 @@ impl<O: Write, I: Read> Exec<O, I> {
     pub fn new(stdout: O, stdin: I) -> Self {
         Self {
             cells: Vec::new(),
-            registers: HashMap::new(),
+            registers: Vec::new(),
             stdout,
             stdin,
         }
     }
 
     pub fn exec_program(&mut self, module: &Module) -> io::Result<()> {
+        let registers = module.registers.len();
+        self.registers.clear();
+        self.registers.extend(once(Value::Uninit).cycle().take(registers));
+
         let entry = module.entry_block();
         let mut action = Action::Jump(entry, Vec::new());
 
@@ -43,7 +46,7 @@ impl<O: Write, I: Read> Exec<O, I> {
 
     fn exec_block(&mut self, block: &Block, args: Vec<Value>) -> io::Result<Action> {
         for (&param, arg) in block.parameters().into_iter().zip(args) {
-            self.registers.insert(param, arg);
+            self[param] = arg;
         }
         let _id = block.id();
         for (_i, instruction) in block.body().into_iter().enumerate() {
@@ -72,7 +75,7 @@ impl<O: Write, I: Read> Exec<O, I> {
     fn load_cell(&mut self, target: RegisterID, index: &Expr) {
         let Value::I64(index) = self.eval_expr(index) else { panic!() };
         let cell = self.cells[index as usize];
-        self.registers.insert(target, Value::I8(cell));
+        self[target] = Value::I8(cell);
     }
     fn store_cell(&mut self, index: &Expr, value: &Expr) {
         let Value::I64(index) = self.eval_expr(index) else { panic!() };
@@ -92,7 +95,7 @@ impl<O: Write, I: Read> Exec<O, I> {
     }
     fn set(&mut self, target: RegisterID, value: &Expr) {
         let value = self.eval_expr(value);
-        self.registers.insert(target, value);
+        self[target] = value;
     }
 
     fn binary_op(&mut self, op: BinaryOp, target: RegisterID, a: &Expr, b: &Expr) {
@@ -114,7 +117,7 @@ impl<O: Write, I: Read> Exec<O, I> {
             Xor => Self::xor(a, b),
         };
 
-        self.registers.insert(target, result);
+        self[target] = result;
     }
     fn add(a: Value, b: Value) -> Value {
         use Value::*;
@@ -235,11 +238,12 @@ impl<O: Write, I: Read> Exec<O, I> {
             Neg => Self::neg(a),
         };
 
-        self.registers.insert(target, result);
+        self[target] = result;
     }
     fn not(a: Value) -> Value {
         use Value::*;
         match a {
+            Uninit => panic!(),
             I1(a) => I1(!a),
             I8(a) => I8(!a),
             I64(a) => I64(!a),
@@ -248,6 +252,7 @@ impl<O: Write, I: Read> Exec<O, I> {
     fn neg(a: Value) -> Value {
         use Value::*;
         match a {
+            Uninit => panic!(),
             I1(a) => I1(a),
             I8(a) => I8((!a).wrapping_add(1)),
             I64(a) => I64((!a).wrapping_add(1)),
@@ -264,7 +269,7 @@ impl<O: Write, I: Read> Exec<O, I> {
             NotEqual => Self::test_not_equal(a, b),
         };
 
-        self.registers.insert(target, result);
+        self[target] = result;
     }
     fn test_equal(a: Value, b: Value) -> Value {
         use Value::*;
@@ -295,7 +300,7 @@ impl<O: Write, I: Read> Exec<O, I> {
         let mut buffer = [0];
         let read = self.stdin.read(&mut buffer)?;
         let result = if read == 0 { default } else { buffer[0] };
-        self.registers.insert(target, Value::I8(result));
+        self[target] = Value::I8(result);
         Ok(())
     }
 
@@ -315,7 +320,7 @@ impl<O: Write, I: Read> Exec<O, I> {
 
     fn eval_expr(&self, expr: &Expr) -> Value {
         match expr {
-            &Expr::Register(r) => self.registers[&r],
+            &Expr::Register(r) => self[r],
             &Expr::Int(i) => match i {
                 ConstInt::Bool(b) => Value::I1(b),
                 ConstInt::U8(v) => Value::I8(v),
@@ -326,6 +331,18 @@ impl<O: Write, I: Read> Exec<O, I> {
         }
     }
 }
+impl<O, I> Index<RegisterID> for Exec<O, I> {
+    type Output = Value;
+
+    fn index(&self, index: RegisterID) -> &Self::Output {
+        &self.registers[index.0]
+    }
+}
+impl<O, I> IndexMut<RegisterID> for Exec<O, I> {
+    fn index_mut(&mut self, index: RegisterID) -> &mut Self::Output {
+        &mut self.registers[index.0]
+    }
+}
 
 enum Action {
     Halt,
@@ -333,7 +350,8 @@ enum Action {
 }
 
 #[derive(Copy, Clone, Debug)]
-enum Value {
+pub enum Value {
+    Uninit,
     I1(bool),
     I8(u8),
     I64(u64),
