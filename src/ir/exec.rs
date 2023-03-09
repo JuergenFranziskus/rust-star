@@ -1,13 +1,14 @@
 use super::{
     block::{Block, BlockID},
-    instruction::{BinaryOp, ConstInt, Expr, TargetBlock, TestOp, UnaryOp},
+    instruction::{BinaryOp, Expr, LeafExpr, TargetBlock, TestOp, UnaryOp},
     register::RegisterID,
     Module,
 };
 use crate::ir::instruction::Instruction;
 use std::{
     io::{self, Read, Write},
-    iter::once, ops::{Index, IndexMut},
+    iter::once,
+    ops::{Index, IndexMut},
 };
 
 pub struct Exec<O, I> {
@@ -29,7 +30,8 @@ impl<O: Write, I: Read> Exec<O, I> {
     pub fn exec_program(&mut self, module: &Module) -> io::Result<()> {
         let registers = module.registers.len();
         self.registers.clear();
-        self.registers.extend(once(Value::Uninit).cycle().take(registers));
+        self.registers
+            .extend(once(Value::Uninit).cycle().take(registers));
 
         let entry = module.entry_block();
         let mut action = Action::Jump(entry, Vec::new());
@@ -50,18 +52,13 @@ impl<O: Write, I: Read> Exec<O, I> {
         }
         let _id = block.id();
         for (_i, instruction) in block.body().into_iter().enumerate() {
-            //eprintln!("Executing instruction {_i} of block {_id}");
-
             use Instruction::*;
             match instruction {
                 &Nop => (),
                 &LoadCell(target, ref index) => self.load_cell(target, index),
                 StoreCell(index, value) => self.store_cell(index, value),
                 BoundsCheck(start, end) => self.bounds_check(start, end),
-                &Set(target, ref value) => self.set(target, value),
-                &Binary(op, target, ref a, ref b) => self.binary_op(op, target, a, b),
-                &Unary(op, target, ref a) => self.unary_op(op, target, a),
-                &Test(op, target, ref a, ref b) => self.test_op(op, target, a, b),
+                &Assign(target, ref expr) => self.assign(target, expr),
                 &Output(ref value) => self.output(value)?,
                 &Input(target, ref default) => self.input(target, default)?,
                 Jump(target) => return Ok(self.jump(target)),
@@ -72,18 +69,18 @@ impl<O: Write, I: Read> Exec<O, I> {
         Ok(Action::Halt)
     }
 
-    fn load_cell(&mut self, target: RegisterID, index: &Expr) {
-        let Value::I64(index) = self.eval_expr(index) else { panic!("{index} is not of type i64") };
+    fn load_cell(&mut self, target: RegisterID, index: &LeafExpr) {
+        let Value::I64(index) = self.eval_leaf_expr(index) else { panic!("{index} is not of type i64") };
         let cell = self.cells[index as usize];
         self[target] = Value::I8(cell);
     }
-    fn store_cell(&mut self, index: &Expr, value: &Expr) {
-        let Value::I64(index) = self.eval_expr(index) else { panic!() };
-        let Value::I8(value) = self.eval_expr(value) else { panic!() };
+    fn store_cell(&mut self, index: &LeafExpr, value: &LeafExpr) {
+        let Value::I64(index) = self.eval_leaf_expr(index) else { panic!() };
+        let Value::I8(value) = self.eval_leaf_expr(value) else { panic!() };
         self.cells[index as usize] = value;
     }
-    fn bounds_check(&mut self, _start: &Expr, end: &Expr) {
-        let Value::I64(end) = self.eval_expr(end) else { panic!() };
+    fn bounds_check(&mut self, _start: &LeafExpr, end: &LeafExpr) {
+        let Value::I64(end) = self.eval_leaf_expr(end) else { panic!() };
         let needs_length = end as usize;
         let has_length = self.cells.len();
         if needs_length > has_length {
@@ -93,17 +90,104 @@ impl<O: Write, I: Read> Exec<O, I> {
             //eprintln!("Cells now have length {}", self.cells.len());
         }
     }
-    fn set(&mut self, target: RegisterID, value: &Expr) {
-        let value = self.eval_expr(value);
+
+    fn assign(&mut self, target: RegisterID, expr: &Expr) {
+        let value = self.eval_expr(expr);
         self[target] = value;
     }
+    fn eval_expr(&self, expr: &Expr) -> Value {
+        match expr {
+            Expr::Leaf(e) => self.eval_leaf_expr(e),
+            &Expr::Binary(ref a, op, ref b) => self.binary_op(op, a, b),
+            &Expr::Unary(ref a, op) => self.unary_op(op, a),
+            &Expr::Test(ref a, op, ref b) => self.test_op(op, a, b),
+        }
+    }
 
-    fn binary_op(&mut self, op: BinaryOp, target: RegisterID, a: &Expr, b: &Expr) {
-        let a = self.eval_expr(a);
-        let b = self.eval_expr(b);
+    fn binary_op(&self, op: BinaryOp, a: &LeafExpr, b: &LeafExpr) -> Value {
+        let a = self.eval_leaf_expr(a);
+        let b = self.eval_leaf_expr(b);
 
+        Value::do_binary_op(a, b, op)
+    }
+
+    fn unary_op(&self, op: UnaryOp, a: &LeafExpr) -> Value {
+        let a = self.eval_leaf_expr(a);
+        Value::do_unary_op(a, op)
+    }
+
+    fn test_op(&self, op: TestOp, a: &LeafExpr, b: &LeafExpr) -> Value {
+        let a = self.eval_leaf_expr(a);
+        let b = self.eval_leaf_expr(b);
+
+        Value::do_test_op(a, b, op)
+    }
+
+    fn output(&mut self, value: &LeafExpr) -> io::Result<()> {
+        let Value::I8(value) = self.eval_leaf_expr(value) else { panic!() };
+        self.stdout.write(&[value])?;
+        self.stdout.flush()?;
+        Ok(())
+    }
+    fn input(&mut self, target: RegisterID, default: &LeafExpr) -> io::Result<()> {
+        let Value::I8(default) = self.eval_leaf_expr(default) else { panic!() };
+        let mut buffer = [0];
+        let read = self.stdin.read(&mut buffer)?;
+        let result = if read == 0 { default } else { buffer[0] };
+        self[target] = Value::I8(result);
+        Ok(())
+    }
+
+    fn jump(&mut self, target: &TargetBlock) -> Action {
+        let id = target.id;
+        let args = target.args.iter().map(|a| self.eval_leaf_expr(a)).collect();
+        Action::Jump(id, args)
+    }
+    fn branch(&mut self, c: &LeafExpr, then: &TargetBlock, els: &TargetBlock) -> Action {
+        let Value::I1(c) = self.eval_leaf_expr(c) else { panic!() };
+        if c {
+            self.jump(then)
+        } else {
+            self.jump(els)
+        }
+    }
+
+    fn eval_leaf_expr(&self, expr: &LeafExpr) -> Value {
+        match expr {
+            &LeafExpr::Register(r) => self[r],
+            &LeafExpr::Int(_) => expr.eval_const().unwrap(),
+        }
+    }
+}
+impl<O, I> Index<RegisterID> for Exec<O, I> {
+    type Output = Value;
+
+    fn index(&self, index: RegisterID) -> &Self::Output {
+        &self.registers[index.0]
+    }
+}
+impl<O, I> IndexMut<RegisterID> for Exec<O, I> {
+    fn index_mut(&mut self, index: RegisterID) -> &mut Self::Output {
+        &mut self.registers[index.0]
+    }
+}
+
+enum Action {
+    Halt,
+    Jump(BlockID, Vec<Value>),
+}
+
+#[derive(Copy, Clone, Debug)]
+pub enum Value {
+    Uninit,
+    I1(bool),
+    I8(u8),
+    I64(u64),
+}
+impl Value {
+    pub fn do_binary_op(a: Value, b: Value, op: BinaryOp) -> Value {
         use BinaryOp::*;
-        let result = match op {
+        match op {
             Add => Self::add(a, b),
             Sub => Self::sub(a, b),
             Mul => Self::mul(a, b),
@@ -115,9 +199,7 @@ impl<O: Write, I: Read> Exec<O, I> {
             And => Self::and(a, b),
             Or => Self::or(a, b),
             Xor => Self::xor(a, b),
-        };
-
-        self[target] = result;
+        }
     }
     fn add(a: Value, b: Value) -> Value {
         use Value::*;
@@ -125,7 +207,7 @@ impl<O: Write, I: Read> Exec<O, I> {
             (I1(a), I1(b)) => I1(a ^ b),
             (I8(a), I8(b)) => I8(a.wrapping_add(b)),
             (I64(a), I64(b)) => I64(a.wrapping_add(b)),
-            _ => panic!(),
+            _ => panic!("Cannot add values {a:?} and {b:?}"),
         }
     }
     fn sub(a: Value, b: Value) -> Value {
@@ -230,15 +312,12 @@ impl<O: Write, I: Read> Exec<O, I> {
         }
     }
 
-    fn unary_op(&mut self, op: UnaryOp, target: RegisterID, a: &Expr) {
-        let a = self.eval_expr(a);
+    pub fn do_unary_op(a: Value, op: UnaryOp) -> Value {
         use UnaryOp::*;
-        let result = match op {
+        match op {
             Not => Self::not(a),
             Neg => Self::neg(a),
-        };
-
-        self[target] = result;
+        }
     }
     fn not(a: Value) -> Value {
         use Value::*;
@@ -259,17 +338,12 @@ impl<O: Write, I: Read> Exec<O, I> {
         }
     }
 
-    fn test_op(&mut self, op: TestOp, target: RegisterID, a: &Expr, b: &Expr) {
-        let a = self.eval_expr(a);
-        let b = self.eval_expr(b);
-
+    pub fn do_test_op(a: Value, b: Value, op: TestOp) -> Value {
         use TestOp::*;
-        let result = match op {
+        match op {
             Equal => Self::test_equal(a, b),
             NotEqual => Self::test_not_equal(a, b),
-        };
-
-        self[target] = result;
+        }
     }
     fn test_equal(a: Value, b: Value) -> Value {
         use Value::*;
@@ -290,70 +364,12 @@ impl<O: Write, I: Read> Exec<O, I> {
         }
     }
 
-    fn output(&mut self, value: &Expr) -> io::Result<()> {
-        let Value::I8(value) = self.eval_expr(value) else { panic!() };
-        self.stdout.write(&[value])?;
-        self.stdout.flush()?;
-        Ok(())
-    }
-    fn input(&mut self, target: RegisterID, default: &Expr) -> io::Result<()> {
-        let Value::I8(default) = self.eval_expr(default) else { panic!() };
-        let mut buffer = [0];
-        let read = self.stdin.read(&mut buffer)?;
-        let result = if read == 0 { default } else { buffer[0] };
-        self[target] = Value::I8(result);
-        Ok(())
-    }
-
-    fn jump(&mut self, target: &TargetBlock) -> Action {
-        let id = target.id;
-        let args = target.args.iter().map(|a| self.eval_expr(a)).collect();
-        Action::Jump(id, args)
-    }
-    fn branch(&mut self, c: &Expr, then: &TargetBlock, els: &TargetBlock) -> Action {
-        let Value::I1(c) = self.eval_expr(c) else { panic!() };
-        if c {
-            self.jump(then)
-        } else {
-            self.jump(els)
+    pub fn to_leaf_expr(self) -> LeafExpr {
+        match self {
+            Self::Uninit => panic!(),
+            Self::I1(val) => LeafExpr::Int(val.into()),
+            Self::I8(val) => LeafExpr::Int(val.into()),
+            Self::I64(val) => LeafExpr::Int(val.into()),
         }
     }
-
-    fn eval_expr(&self, expr: &Expr) -> Value {
-        match expr {
-            &Expr::Register(r) => self[r],
-            &Expr::Int(i) => match i {
-                ConstInt::Bool(b) => Value::I1(b),
-                ConstInt::U8(v) => Value::I8(v),
-                ConstInt::I8(v) => Value::I8(u8::from_le_bytes(v.to_le_bytes())),
-                ConstInt::U64(v) => Value::I64(v),
-                ConstInt::I64(v) => Value::I64(u64::from_le_bytes(v.to_le_bytes())),
-            },
-        }
-    }
-}
-impl<O, I> Index<RegisterID> for Exec<O, I> {
-    type Output = Value;
-
-    fn index(&self, index: RegisterID) -> &Self::Output {
-        &self.registers[index.0]
-    }
-}
-impl<O, I> IndexMut<RegisterID> for Exec<O, I> {
-    fn index_mut(&mut self, index: RegisterID) -> &mut Self::Output {
-        &mut self.registers[index.0]
-    }
-}
-
-enum Action {
-    Halt,
-    Jump(BlockID, Vec<Value>),
-}
-
-#[derive(Copy, Clone, Debug)]
-pub enum Value {
-    Uninit,
-    I1(bool),
-    I8(u8),
-    I64(u64),
 }

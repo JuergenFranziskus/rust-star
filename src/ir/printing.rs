@@ -1,4 +1,10 @@
-use super::{block::Block, instruction::Instruction, register::RegisterID, Module};
+use super::{
+    block::Block,
+    instruction::{BinaryOp, Instruction, LeafExpr, TestOp, UnaryOp},
+    register::RegisterID,
+    Module,
+};
+use crate::ir::instruction::Expr;
 use std::io::{self, Write};
 
 pub struct Printer<O> {
@@ -43,18 +49,15 @@ impl<O: Write> Printer<O> {
             &LoadCell(target, index) => writeln!(self.out, "{target} = load({index})")?,
             &StoreCell(index, value) => writeln!(self.out, "store({index}, {value})")?,
             &BoundsCheck(index, bounds) => writeln!(self.out, "boundscheck({index}, {bounds})")?,
-            &Set(target, value) => writeln!(self.out, "{target} = {value}")?,
-            &Binary(op, target, a, b) => {
-                let target_type = m[target].register_type();
-                writeln!(self.out, "{target} = {op} {target_type} {a}, {b}")?;
-            }
-            &Unary(op, target, a) => {
-                let target_type = m[target].register_type();
-                writeln!(self.out, "{target} = {op} {target_type} {a}")?;
-            }
-            &Test(op, target, a, b) => {
-                let a_type = a.expr_type(m);
-                writeln!(self.out, "{target} = {op} {a_type} {a}, {b}")?;
+            &Assign(target, value) => {
+                write!(self.out, "{target} = ")?;
+                match value {
+                    Expr::Leaf(val) => self.print_expr_leaf(val, m)?,
+                    Expr::Binary(a, op, b) => self.print_bin_op(a, op, b, m)?,
+                    Expr::Unary(a, op) => self.print_un_op(a, op, m)?,
+                    Expr::Test(a, op, b) => self.print_test_op(a, op, b, m)?,
+                };
+                writeln!(self.out)?;
             }
             &Output(value) => writeln!(self.out, "stdout << {value}")?,
             &Input(target, default) => writeln!(self.out, "{target} = eof ? {default} : stdin")?,
@@ -65,6 +68,34 @@ impl<O: Write> Printer<O> {
         }
 
         Ok(())
+    }
+    fn print_expr_leaf(&mut self, leaf: LeafExpr, m: &Module) -> io::Result<()> {
+        let leaf_type = leaf.expr_type(m);
+        write!(self.out, "{leaf_type} {leaf}")
+    }
+    fn print_bin_op(
+        &mut self,
+        a: LeafExpr,
+        op: BinaryOp,
+        b: LeafExpr,
+        m: &Module,
+    ) -> io::Result<()> {
+        let a_type = a.expr_type(m);
+        write!(self.out, "{op} {a_type} {a}, {b}")
+    }
+    fn print_un_op(&mut self, a: LeafExpr, op: UnaryOp, m: &Module) -> io::Result<()> {
+        let a_type = a.expr_type(m);
+        write!(self.out, "{op} {a_type} {a}")
+    }
+    fn print_test_op(
+        &mut self,
+        a: LeafExpr,
+        op: TestOp,
+        b: LeafExpr,
+        m: &Module,
+    ) -> io::Result<()> {
+        let a_type = a.expr_type(m);
+        write!(self.out, "{op} {a_type} {a}, {b}")
     }
 
     fn print_reg_with_type(&mut self, reg: RegisterID, m: &Module) -> io::Result<()> {

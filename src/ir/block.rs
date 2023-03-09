@@ -4,9 +4,9 @@ use super::{instruction::Instruction, register::RegisterID};
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct Block {
-    id: BlockID,
-    body: Vec<Instruction>,
-    parameters: Vec<RegisterID>,
+    pub(super) id: BlockID,
+    pub(super) body: Vec<Instruction>,
+    pub(super) parameters: Vec<RegisterID>,
 }
 impl Block {
     pub fn new(id: BlockID) -> Self {

@@ -10,6 +10,7 @@ pub mod block;
 pub mod builder;
 pub mod exec;
 pub mod instruction;
+pub mod optimize;
 pub mod printing;
 pub mod register;
 pub mod types;

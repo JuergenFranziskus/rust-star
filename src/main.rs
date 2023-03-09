@@ -1,6 +1,6 @@
 use rustfck::{
     frontend::{code_gen::gen_program, lexer::lex, optimize::apply_optimizations, parser::parse},
-    ir::{exec::Exec, printing::Printer},
+    ir::{exec::Exec, optimize::optimize_module, printing::Printer},
 };
 use std::io::{stdin, stdout, Cursor};
 
@@ -14,7 +14,8 @@ fn main() {
 
     apply_optimizations(&mut program);
 
-    let module = gen_program(&program);
+    let mut module = gen_program(&program);
+    optimize_module(&mut module);
     Printer::new(stdout()).print_module(&module).unwrap();
     let mut exec = Exec::new(stdout(), stdin());
     exec.exec_program(&module).unwrap();

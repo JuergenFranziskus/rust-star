@@ -1,10 +1,13 @@
-use std::{collections::{HashMap, HashSet}, mem::take};
+use std::{
+    collections::{HashMap, HashSet},
+    mem::take,
+};
 
 use super::expr_tree::{CellOffset, Instruction, Program};
 use crate::ir::{
     block::BlockID,
     builder::Builder,
-    instruction::{Expr, TestOp},
+    instruction::{LeafExpr, TestOp},
     register::RegisterID,
     types::Type,
     Module,
@@ -127,7 +130,7 @@ impl<'a> CodeGen<'a> {
         self.restore_context(context);
     }
 
-    fn branch_to(&mut self, c: impl Into<Expr>, then: BlockID, els: BlockID, unbalanced: bool) {
+    fn branch_to(&mut self, c: impl Into<LeafExpr>, then: BlockID, els: BlockID, unbalanced: bool) {
         if unbalanced {
             self.spill_values();
             self.spill_indices();
@@ -159,7 +162,7 @@ impl<'a> CodeGen<'a> {
         self.cells = self.cells.drain().map(|(k, v)| (k - by, v)).collect();
         self.written = self.written.drain().map(|k| k - by).collect();
     }
-    
+
     fn spill_indices(&mut self) {
         self.indices.clear();
     }
@@ -167,10 +170,13 @@ impl<'a> CodeGen<'a> {
         let mut values = take(&mut self.cells);
         let mut written = take(&mut self.written);
 
-        values.drain().filter(|(k, _)| written.contains(k)).for_each(|(offset, value)| {
-            let index = self.get_cell_index(offset);
-            self.builder.store_cell(index, value);
-        });
+        values
+            .drain()
+            .filter(|(k, _)| written.contains(k))
+            .for_each(|(offset, value)| {
+                let index = self.get_cell_index(offset);
+                self.builder.store_cell(index, value);
+            });
 
         written.clear();
         self.cells = values;
@@ -179,8 +185,7 @@ impl<'a> CodeGen<'a> {
     fn get_cell_index(&mut self, offset: CellOffset) -> RegisterID {
         if let Some(&index) = self.indices.get(&offset) {
             index
-        }
-        else {
+        } else {
             let cell_index = self.builder.add(self.index, offset as i64);
             self.indices.insert(offset, cell_index);
             cell_index
@@ -189,35 +194,45 @@ impl<'a> CodeGen<'a> {
     fn get_cell(&mut self, offset: CellOffset) -> RegisterID {
         if let Some(&value) = self.cells.get(&offset) {
             value
-        }
-        else {
+        } else {
             let index = self.get_cell_index(offset);
             let value = self.builder.load_cell(index);
             self.cells.insert(offset, value);
             value
         }
     }
-    fn set_cell(&mut self, offset: CellOffset, value: impl Into<Expr>) {
-        let value: Expr = value.into();
+    fn set_cell(&mut self, offset: CellOffset, value: impl Into<LeafExpr>) {
+        let value: LeafExpr = value.into();
 
         match value {
-            Expr::Int(c) => self.cells.insert(offset, self.builder.set(c)),
-            Expr::Register(r) => self.cells.insert(offset, r),
+            LeafExpr::Int(c) => self.cells.insert(offset, self.builder.set(c)),
+            LeafExpr::Register(r) => self.cells.insert(offset, r),
         };
         self.written.insert(offset);
     }
 
-
-    fn save_context(&self) -> (HashMap<CellOffset, RegisterID>, HashMap<CellOffset, RegisterID>, HashSet<CellOffset>) {
+    fn save_context(
+        &self,
+    ) -> (
+        HashMap<CellOffset, RegisterID>,
+        HashMap<CellOffset, RegisterID>,
+        HashSet<CellOffset>,
+    ) {
         let cells = self.cells.clone();
         let indices = self.indices.clone();
         let written = self.written.clone();
         (cells, indices, written)
     }
-    fn restore_context(&mut self, context: (HashMap<CellOffset, RegisterID>, HashMap<CellOffset, RegisterID>, HashSet<CellOffset>)) {
+    fn restore_context(
+        &mut self,
+        context: (
+            HashMap<CellOffset, RegisterID>,
+            HashMap<CellOffset, RegisterID>,
+            HashSet<CellOffset>,
+        ),
+    ) {
         self.cells = context.0;
         self.indices = context.1;
         self.written = context.2;
     }
-
 }
